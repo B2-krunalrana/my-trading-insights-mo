@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Trading Profit/Loss Visualizer</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f4f6f8; }
+    h1 { text-align: center; color: #333; }
+    input[type=file], button { margin: 20px auto; display: block; padding: 10px; font-size: 16px; }
+    button { background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .summary { display: flex; justify-content: space-around; margin: 20px 0; }
+    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); width: 200px; text-align: center; }
+    .card h3 { margin: 0; font-size: 20px; }
+    .card p { font-size: 18px; font-weight: bold; }
+    .charts { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px; }
+    canvas { background: white; padding: 10px; border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+    th, td { padding: 8px; border: 1px solid #ddd; text-align: center; }
+    th { background: #007bff; color: white; }
+</style>
+</head>
+<body>
+
+<h1>📊 Trading Profit/Loss Report</h1>
+<input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+<button id="generateBtn" disabled>Generate Insights</button>
+
+<div class="summary">
+    <div class="card" style="border-top: 4px solid green;">
+        <h3>Total Profit</h3>
+        <p id="totalProfit">₹0</p>
+    </div>
+    <div class="card" style="border-top: 4px solid red;">
+        <h3>Total Loss</h3>
+        <p id="totalLoss">₹0</p>
+    </div>
+    <div class="card" style="border-top: 4px solid blue;">
+        <h3>Net P/L</h3>
+        <p id="netPL">₹0</p>
+    </div>
+</div>
+
+<div class="charts">
+    <canvas id="pieChart" width="400" height="300"></canvas>
+    <canvas id="barChart" width="400" height="300"></canvas>
+</div>
+
+<h2>📋 Detailed Transactions</h2>
+<table id="dataTable">
+    <thead>
+        <tr>
+            <th>Stock</th>
+            <th>Qty</th>
+            <th>Buy Rate</th>
+            <th>Sell Rate</th>
+            <th>Gain/Loss</th>
+            <th>STT</th>
+            <th>Purchase Tax</th>
+            <th>Net Gain/Loss</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
+<script>
+let excelData = [];
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        excelData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+        document.getElementById('generateBtn').disabled = false;
+    };
+    reader.readAsArrayBuffer(file);
+});
+
+document.getElementById('generateBtn').addEventListener('click', function() {
+    if (excelData.length === 0) return;
+
+    let totalProfit = 0, totalLoss = 0;
+    let labels = [], values = [];
+    let tableBody = document.querySelector("#dataTable tbody");
+    tableBody.innerHTML = "";
+
+    excelData.forEach(row => {
+        let gainLoss = parseFloat(row.gainloss) || 0;
+        let stt = parseFloat(row.sellstt) || 0;
+        let purstt = parseFloat(row.purstt) || 0;
+        let net = gainLoss - stt - purstt;
+
+        if (net >= 0) totalProfit += net;
+        else totalLoss += net;
+
+        labels.push(row.fullname);
+        values.push(net);
+
+        let tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${row.fullname}</td>
+            <td>${row.qty}</td>
+            <td>${parseFloat(row.buyrate).toFixed(2)}</td>
+            <td>${parseFloat(row.sellrate).toFixed(2)}</td>
+            <td>${gainLoss.toFixed(2)}</td>
+            <td>${stt.toFixed(2)}</td>
+            <td>${purstt.toFixed(2)}</td>
+            <td style="color:${net>=0?'green':'red'};">${net.toFixed(2)}</td>
+        `;
+        tableBody.appendChild(tr);
+    });
+
+    document.getElementById("totalProfit").textContent = "₹" + totalProfit.toFixed(2);
+    document.getElementById("totalLoss").textContent = "₹" + Math.abs(totalLoss).toFixed(2);
+    document.getElementById("netPL").textContent = "₹" + (totalProfit + totalLoss).toFixed(2);
+
+    // Pie Chart
+    new Chart(document.getElementById('pieChart'), {
+        type: 'pie',
+        data: {
+            labels: ["Profit", "Loss"],
+            datasets: [{
+                data: [totalProfit, Math.abs(totalLoss)],
+                backgroundColor: ['green', 'red']
+            }]
+        }
+    });
+
+    // Bar Chart
+    new Chart(document.getElementById('barChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Net Gain/Loss',
+                data: values,
+                backgroundColor: values.map(v => v >= 0 ? 'green' : 'red')
+            }]
+        },
+        options: {
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+});
+</script>
+
+</body>
+</html>
