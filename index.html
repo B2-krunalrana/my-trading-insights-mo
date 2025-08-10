@@ -3,23 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <title>Trading Profit/Loss Visualizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f4f6f8; }
-    h1 { text-align: center; color: #333; }
-    input[type=file], button { margin: 20px auto; display: block; padding: 10px; font-size: 16px; }
+    body { font-family: Arial, sans-serif; margin: 10px; background: #f4f6f8; }
+    h1 { text-align: center; color: #333; font-size: 1.5em; }
+    input[type=file], button { margin: 10px auto; display: block; padding: 10px; font-size: 16px; max-width: 95%; }
     button { background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
     button:hover { background: #0056b3; }
-    .summary { display: flex; justify-content: space-around; margin: 20px 0; }
-    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); width: 200px; text-align: center; }
-    .card h3 { margin: 0; font-size: 20px; }
-    .card p { font-size: 18px; font-weight: bold; }
-    .charts { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px; }
-    canvas { background: white; padding: 10px; border-radius: 10px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
-    th, td { padding: 8px; border: 1px solid #ddd; text-align: center; }
+    .summary { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+    .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); flex: 1 1 150px; text-align: center; }
+    .card h3 { margin: 0; font-size: 16px; }
+    .card p { font-size: 16px; font-weight: bold; }
+    .charts { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
+    canvas { background: white; padding: 10px; border-radius: 10px; max-width: 100%; height: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; font-size: 14px; }
+    th, td { padding: 6px; border: 1px solid #ddd; text-align: center; }
     th { background: #007bff; color: white; }
+    .table-container { overflow-x: auto; }
+    ul { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); list-style: none; margin: 0; }
+    ul li { padding: 5px 0; }
 </style>
 </head>
 <body>
@@ -41,14 +45,26 @@
         <h3>Net P/L</h3>
         <p id="netPL">₹0</p>
     </div>
+    <div class="card" style="border-top: 4px solid orange;">
+        <h3>Avg Holding Days</h3>
+        <p id="avgHolding">0</p>
+    </div>
 </div>
 
 <div class="charts">
-    <canvas id="pieChart" width="400" height="300"></canvas>
-    <canvas id="barChart" width="400" height="300"></canvas>
+    <canvas id="pieChart" width="350" height="300"></canvas>
+    <canvas id="barChart" width="350" height="300"></canvas>
+    <canvas id="chargeChart" width="350" height="300"></canvas>
+    <canvas id="termChart" width="350" height="300"></canvas>
 </div>
 
+<h2>📈 Top 5 Gainers</h2>
+<ul id="topGainers"></ul>
+<h2>📉 Top 5 Losers</h2>
+<ul id="topLosers"></ul>
+
 <h2>📋 Detailed Transactions</h2>
+<div class="table-container">
 <table id="dataTable">
     <thead>
         <tr>
@@ -64,6 +80,7 @@
     </thead>
     <tbody></tbody>
 </table>
+</div>
 
 <script>
 let excelData = [];
@@ -86,8 +103,9 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
 document.getElementById('generateBtn').addEventListener('click', function() {
     if (excelData.length === 0) return;
 
-    let totalProfit = 0, totalLoss = 0;
-    let labels = [], values = [];
+    let totalProfit = 0, totalLoss = 0, totalSTT = 0, totalPurSTT = 0;
+    let shortTerm = 0, longTerm = 0, holdingSum = 0;
+    let labels = [], values = [], gainers = [], losers = [];
     let tableBody = document.querySelector("#dataTable tbody");
     tableBody.innerHTML = "";
 
@@ -96,12 +114,23 @@ document.getElementById('generateBtn').addEventListener('click', function() {
         let stt = parseFloat(row.sellstt) || 0;
         let purstt = parseFloat(row.purstt) || 0;
         let net = gainLoss - stt - purstt;
+        let holding = parseInt(row.holdingperiod) || 0;
+
+        totalSTT += stt;
+        totalPurSTT += purstt;
+        holdingSum += holding;
+
+        if (holding <= 365) shortTerm += net;
+        else longTerm += net;
 
         if (net >= 0) totalProfit += net;
         else totalLoss += net;
 
         labels.push(row.fullname);
         values.push(net);
+
+        if (net >= 0) gainers.push({ name: row.fullname, value: net });
+        else losers.push({ name: row.fullname, value: net });
 
         let tr = document.createElement("tr");
         tr.innerHTML = `
@@ -120,32 +149,51 @@ document.getElementById('generateBtn').addEventListener('click', function() {
     document.getElementById("totalProfit").textContent = "₹" + totalProfit.toFixed(2);
     document.getElementById("totalLoss").textContent = "₹" + Math.abs(totalLoss).toFixed(2);
     document.getElementById("netPL").textContent = "₹" + (totalProfit + totalLoss).toFixed(2);
+    document.getElementById("avgHolding").textContent = (holdingSum / excelData.length).toFixed(1);
 
-    // Pie Chart
+    // Sort and display gainers/losers
+    gainers.sort((a,b) => b.value - a.value).slice(0,5).forEach(g => {
+        let li = document.createElement("li");
+        li.textContent = `${g.name}: ₹${g.value.toFixed(2)}`;
+        document.getElementById("topGainers").appendChild(li);
+    });
+    losers.sort((a,b) => a.value - b.value).slice(0,5).forEach(l => {
+        let li = document.createElement("li");
+        li.textContent = `${l.name}: ₹${l.value.toFixed(2)}`;
+        document.getElementById("topLosers").appendChild(li);
+    });
+
+    // Charts
     new Chart(document.getElementById('pieChart'), {
         type: 'pie',
         data: {
             labels: ["Profit", "Loss"],
-            datasets: [{
-                data: [totalProfit, Math.abs(totalLoss)],
-                backgroundColor: ['green', 'red']
-            }]
+            datasets: [{ data: [totalProfit, Math.abs(totalLoss)], backgroundColor: ['green', 'red'] }]
         }
     });
 
-    // Bar Chart
     new Chart(document.getElementById('barChart'), {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Net Gain/Loss',
-                data: values,
-                backgroundColor: values.map(v => v >= 0 ? 'green' : 'red')
-            }]
+            datasets: [{ label: 'Net Gain/Loss', data: values, backgroundColor: values.map(v => v >= 0 ? 'green' : 'red') }]
         },
-        options: {
-            scales: { y: { beginAtZero: true } }
+        options: { scales: { y: { beginAtZero: true } } }
+    });
+
+    new Chart(document.getElementById('chargeChart'), {
+        type: 'pie',
+        data: {
+            labels: ["STT", "Purchase Tax"],
+            datasets: [{ data: [totalSTT, totalPurSTT], backgroundColor: ['orange', 'purple'] }]
+        }
+    });
+
+    new Chart(document.getElementById('termChart'), {
+        type: 'pie',
+        data: {
+            labels: ["Short Term", "Long Term"],
+            datasets: [{ data: [shortTerm, longTerm], backgroundColor: ['#3498db', '#9b59b6'] }]
         }
     });
 });
